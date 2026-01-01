@@ -18,9 +18,10 @@
       --panel: #121822;
       --text: #e6e9ef;
       --muted: #9aa4b2;
-      --blue: #1e40af;
+      --blue: #2563eb;
       --red: #dc2626;
       --green: #16a34a;
+      --orange: #f97316;
     }
 
     * { box-sizing: border-box; }
@@ -99,12 +100,13 @@
 
     @media (min-width: 768px) {
       .panel {
-        position: absolute;
+        position: fixed;
         bottom: 1rem;
         left: 1rem;
         width: 340px;
         border-radius: 10px;
         border: 1px solid #1e2633;
+        z-index: 1000;
       }
     }
   </style>
@@ -118,7 +120,7 @@
 
 <div id="map"></div>
 
-<div class="panel">
+<div class="panel" id="overviewPanel">
   <div class="row">
     <strong>Crash overview</strong>
     <span style="color:var(--muted)">sample data</span>
@@ -151,10 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  /*
-    Representative crash-style data
-    (structured to resemble SWITRS fields)
-  */
+  // Representative crash-style sample data (SWITRS-like)
   const crashData = Array.from({ length: 160 }, () => ({
     lat: 38.08 + Math.random() * 0.07,
     lng: -122.61 + Math.random() * 0.08,
@@ -171,17 +170,34 @@ document.addEventListener('DOMContentLoaded', () => {
     heatLayer.clearLayers();
 
     crashData.filter(filterFn).forEach(c => {
+      const color = c.severity === 'severe' ? '#dc2626' : '#f97316';
+
       const point = L.circleMarker([c.lat, c.lng], {
         radius: c.severity === 'severe' ? 6 : 4,
-        color: '#dc2626',
-        fillOpacity: 0.7
+        color,
+        fillOpacity: 0.8
+      });
+
+      point.bindTooltip(
+        `${c.severity} crash${c.night ? ' • night' : ''}${c.speed ? ' • speed suspected' : ''}`,
+        { direction: 'top', opacity: 0.9 }
+      );
+
+      point.on('click', () => {
+        point.bindPopup(`
+          <strong>Crash snapshot</strong><br/>
+          Severity: ${c.severity}<br/>
+          Time: ${c.night ? 'night' : 'day'}<br/>
+          Speed involved: ${c.speed ? 'likely' : 'not indicated'}<br/>
+          <span style="color:#94a3b8">sample / draft data</span>
+        `, { closeOnClick: false, autoClose: false }).openPopup();
       });
 
       const heat = L.circle([c.lat, c.lng], {
-        radius: 200,
-        color: '#dc2626',
-        fillColor: '#dc2626',
-        fillOpacity: 0.18,
+        radius: 220,
+        color,
+        fillColor: color,
+        fillOpacity: 0.16,
         stroke: false
       });
 
@@ -190,14 +206,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function updateMetrics() {
-    const total = crashData.length;
-    const night = crashData.filter(c => c.night).length;
-    const speed = crashData.filter(c => c.speed).length;
+  function updateMetrics(filtered = crashData) {
+    const total = filtered.length;
+    const night = filtered.filter(c => c.night).length;
+    const speed = filtered.filter(c => c.speed).length;
 
     document.getElementById('crashCount').textContent = total;
-    document.getElementById('nightShare').textContent = Math.round(night / total * 100) + '%';
-    document.getElementById('speedShare').textContent = Math.round(speed / total * 100) + '%';
+    document.getElementById('nightShare').textContent = total ? Math.round(night / total * 100) + '%' : '—';
+    document.getElementById('speedShare').textContent = total ? Math.round(speed / total * 100) + '%' : '—';
   }
 
   render();
@@ -212,13 +228,17 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   document.getElementById('filterNight').onclick = () => {
+    const filtered = crashData.filter(c => c.night);
     document.getElementById('scenarioLabel').textContent = 'night only';
     render(c => c.night);
+    updateMetrics(filtered);
   };
 
   document.getElementById('filterSpeed').onclick = () => {
+    const filtered = crashData.filter(c => c.speed);
     document.getElementById('scenarioLabel').textContent = 'speed related';
     render(c => c.speed);
+    updateMetrics(filtered);
   };
 
   document.getElementById('locBtn').onclick = () => {
@@ -229,12 +249,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     navigator.geolocation.getCurrentPosition(pos => {
       const latlng = [pos.coords.latitude, pos.coords.longitude];
-      map.setView(latlng, 14);
+      map.setView(latlng, 14, { animate: true });
+
       L.circleMarker(latlng, {
         radius: 6,
         color: '#16a34a',
         fillOpacity: 0.9
-      }).addTo(map);
+      }).addTo(map).bindPopup('You are here').openPopup();
     }, () => alert('could not get location'));
   };
 });
